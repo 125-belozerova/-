@@ -1,0 +1,105 @@
+# для региона 13 рассчитайте урожайность пшеницы в 2003 году, взяв для рассчета средние суммы активных температур за текущий год, с 14 ближайших метеостанций
+
+#Проверка рабочей директории
+setwd()
+getwd()
+
+#Подключим нужные пакеты
+library(tidyverse)
+library(rnoaa)
+library(lubridate)
+
+
+
+#Скачаем общий список метеостанций
+#station_data = ghcnd_stations()
+station_data= read.csv("station_data.csv")
+
+#После получения всписка всех станций, получите список станций ближайших к столице вашего региона,создав таблицу с именем региона и координатами его столицы
+Mordva =  data.frame(id =  "MORDOVIANS", latitude =  54.1101, longitude =  45.1029)
+Mordva_around = meteo_nearby_stations(lat_lon_df = Mordva, station_data = station_data, limit = 14, var = c("PRCP", "TAVG"), year_min = 2003, year_max = 2003)
+
+#Mordva_around это список единственным элементом которого является таблица, содержащая идентификаторы метеостанций отсортированных по их удалленности от республики Мордовии, очевидно что первым элементом таблицы будет идентификатор метеостанции Абакана, его то мы и попытаемся получить
+Mordva_id =  Mordva_around[["MORDOVIANS"]] [["id" ]][ 1]
+Mordva_id
+Mordva_table = Mordva_around[[1]] 
+
+###Нужно создать цикл, в котором бы скачивались нужные данные для всех метеостанций из созданного списка
+#Создадим промежуточный объект, куда будем скачивать данные с конкретной метеостанции
+all_i =  data.frame()
+
+#Создадим объект, куда скачаем все данные с 14 ближайших метеостанций
+all_Mordva_meteodata =  data.frame()
+
+#Цикл для всех метеостанций
+for(i in 1: 14) 
+{
+  print(i)
+  print(Mordva_id)
+  #Выберем нужные свойства 
+  all_i = meteo_tidy_ghcnd(stationid = Mordva_table$id [i])
+  all_i=all_i[,c("id","date","tavg")]
+  #Соединяем данные, полученные на предыдущих и данном этапах цикла
+  all_Mordva_meteodata=rbind (all_Mordva_meteodata, all_i)
+}
+
+#Пропишем полученные результаты
+write.csv(all_Mordva_meteodata, " all_Mordva_meteodata.csv")
+
+#Создаем строки год, месяц, день в таблице
+all_Mordva_meteodata=mutate(all_Mordva_meteodata, year=year(date),month=month(date),day=day(date))
+
+#Посмотрим на данные
+str(all_Mordva_meteodata)
+
+#Отфильтруем данные за 2003 год
+years_Mordva_meteodata=filter(all_Mordva_meteodata, year %in% 2003)
+
+#Проверим результат
+str(years_Mordva_meteodata)
+summary(years_Mordva_meteodata)
+years_Mordva_meteodata[,"tavg"]=years_Mordva_meteodata$tavg/10
+summary(years_Mordva_meteodata)
+
+#Превратим в нули все NA и где  tavg <5
+years_Mordva_meteodata[is.na(years_Mordva_meteodata$tavg),"tavg"] = 0
+years_Mordva_meteodata[years_Mordva_meteodata$tavg<5, "tavg"] = 0
+summary(years_Mordva_meteodata)
+
+#Группируем по метеостанциям, годам и месяцам
+alldays=group_by(years_Mordva_meteodata,id,year,month)
+sumT_alldays_Mordva=summarize(alldays,tsum=sum(tavg))
+summary(sumT_alldays_habar)
+
+#Сгруппируем данные по месяцам
+groups_Mordva_months=group_by(sumT_alldays_Mordva,month)
+groups_Mordva_months
+
+#Найдем для всех метеостанций среднее по месяцам
+sumT_months=summarize(groups_Mordva_months,St=mean(tsum))
+sumT_months
+
+  #Создание векторов с данными для рассчётов
+  #коэффициент для экпозиции склона - считаем что все поля идеально ровные
+  y  =  1
+#Константы
+afi=c(0,0,0, 32.11, 26.31, 25.64, 23.20, 18.73, 16.30, 13.83, 0,0)
+bfi=c(0,0,0, 11.30, 9.26, 9.03, 8.16, 6.59, 5.73, 4.87, 0,0)
+#отношение числа дней i-го месяца, входящих в период вегетации культуры, к общему числу дней в месяце
+di=c(0,0,0, 0.33, 1.00, 1.00, 1.00, 0.32,0.00, 0.00, 0.00, 0.00)
+#Коэффициент использования ФАР посевом
+Kf=300
+#Калорийность урожая культуры
+Qj=1600
+#Коэффициент "Сумма частей основной и побочной продукции
+Lj=2.2
+#Коэффициент "Стандартная влажность культуры"
+Ej=25
+
+#Рассчитать Fi по месяцам
+sumT_months=mutate(sumT_months,Fi=afi+bfi*y*St)
+#Рассчитаемть Yi
+sumT_months=mutate (sumT_months, Yi = ((Fi * di) * Kf) / (Qj * Lj * (100-Ej)) )
+#Расчитывать урожай как сумму по месяцам:
+Yield = sum(sumT_months$Yi); Yield
+#Для республики Мордовии урожайность пшеницы в 2003 году составила 47.28659 ц/га, по данным, полученным на основе средней суммы активных температур с 14 ближайших метеостанций
